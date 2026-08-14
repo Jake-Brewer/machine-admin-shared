@@ -195,6 +195,18 @@ def linear_to_srgb255(lin):
     return round(max(0.0, min(1.0, c)) * 255)
 
 FIXED_DARK_BUBBLE_RGB = (25, 26, 27)  # measured, extension-hardcoded, not theme-derived
+# VSCode's built-in menu.background default (dark_modern theme, unset by us) —
+# a THIRD fixed-dark surface the Claude Code "/" command popup renders this
+# same `foreground` var against (its commandLabel/sectionHeader CSS reads
+# --app-primary-foreground -> --vscode-foreground, NOT --vscode-menu-foreground,
+# despite the extension exposing a separate menu-foreground var it doesn't use
+# here — found 2026-08-14 by reading the extension's own minified CSS after
+# the first "menu.foreground" fix attempt turned out to target the wrong var).
+# Slightly LIGHTER than the bubble, which makes it the binding (harder)
+# constraint: a gray balanced only against the bubble reads fine there but
+# undershoots against this one. Solve against whichever of the two fixed dark
+# surfaces has higher luminance, so contrast against BOTH ends up >= this.
+FIXED_MENU_BG_RGB = (0x1F, 0x1F, 0x1F)
 
 if mode == "dark":
     # Editor surface is already near-black here, same ballpark as the fixed
@@ -202,7 +214,7 @@ if mode == "dark":
     base_fg_hex = editor_fg_hex
 else:
     l_light = rel_luminance(round(er * 255), round(eg * 255), round(eb * 255))
-    l_dark = rel_luminance(*FIXED_DARK_BUBBLE_RGB)
+    l_dark = max(rel_luminance(*FIXED_DARK_BUBBLE_RGB), rel_luminance(*FIXED_MENU_BG_RGB))
     l_mid = ((l_light + 0.05) * (l_dark + 0.05)) ** 0.5 - 0.05
     mid255 = linear_to_srgb255(l_mid)
     base_fg_hex = "#{:02x}{:02x}{:02x}".format(mid255, mid255, mid255)
