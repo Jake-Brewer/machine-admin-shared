@@ -61,7 +61,7 @@ TARGET="$(cd "$TARGET" && pwd)"
 # --- color math (python3: HSL->hex fill/accent, luma-based foreground choice,
 #     light/dark mode selection, and golden-angle next-hue picker that avoids
 #     existing registry hues) ---
-read -r PICKED_HUE FILL ACCENT FOREGROUND PICKED_EMOJI PICKED_MODE EDITOR_BG EDITOR_FG SIDEBAR_BG SIDEBAR_FG PANEL_BG SECTION_BG SECTION_FG SIDEBAR_TITLE_FG <<EOF
+read -r PICKED_HUE FILL ACCENT FOREGROUND PICKED_EMOJI PICKED_MODE EDITOR_BG EDITOR_FG SIDEBAR_BG SIDEBAR_FG PANEL_BG SECTION_BG SECTION_FG SIDEBAR_TITLE_FG BASE_FG <<EOF
 $(python3 - "$REGISTRY" "$HUE" "$EMOJI" "$LABEL" "$MODE" <<'PYEOF'
 import sys, colorsys, hashlib
 
@@ -167,6 +167,46 @@ section_fg_hex = "#0E0F11" if sh_luma >= 120 else "#f5f5f5"
 sb_luma = luma_of(round(sr * 255), round(sg * 255), round(sb * 255))
 sidebar_title_fg_hex = "#0E0F11" if sb_luma >= 120 else "#f5f5f5"
 
+# Base "foreground" key: some extension webviews (observed: Claude Code's own
+# chat panel) render normal text against OUR computed editor.background, but
+# render certain blocks (user-turn bubbles) against their OWN fixed near-black
+# background (~#191a1b) regardless of project theme mode — and both read the
+# SAME generic `foreground` CSS var, with no separate override available.
+# A flat dark value (as used for editor.foreground) reads great on our pale
+# light-mode background but is then invisible on that fixed dark bubble; a
+# flat light value does the opposite. No single flat gray hits 4.5:1 against
+# both when the two backgrounds are this far apart (proven 2026-08-14,
+# GoogleDrive regression) — so instead compute the WCAG "maximin" gray: the
+# one value whose contrast ratio against the light surface equals its
+# contrast ratio against the fixed dark surface, maximizing the worse of the
+# two rather than perfecting one at the other's expense. See
+# docs/vscode-theming.md for the derivation.
+def srgb_to_linear(c255):
+    c = c255 / 255.0
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+def rel_luminance(r255, g255, b255):
+    r, g, b = srgb_to_linear(r255), srgb_to_linear(g255), srgb_to_linear(b255)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+def linear_to_srgb255(lin):
+    lin = max(0.0, min(1.0, lin))
+    c = lin * 12.92 if lin <= 0.0031308 else 1.055 * (lin ** (1 / 2.4)) - 0.055
+    return round(max(0.0, min(1.0, c)) * 255)
+
+FIXED_DARK_BUBBLE_RGB = (25, 26, 27)  # measured, extension-hardcoded, not theme-derived
+
+if mode == "dark":
+    # Editor surface is already near-black here, same ballpark as the fixed
+    # dark bubble — no conflict, the existing light foreground works for both.
+    base_fg_hex = editor_fg_hex
+else:
+    l_light = rel_luminance(round(er * 255), round(eg * 255), round(eb * 255))
+    l_dark = rel_luminance(*FIXED_DARK_BUBBLE_RGB)
+    l_mid = ((l_light + 0.05) * (l_dark + 0.05)) ** 0.5 - 0.05
+    mid255 = linear_to_srgb255(l_mid)
+    base_fg_hex = "#{:02x}{:02x}{:02x}".format(mid255, mid255, mid255)
+
 if emoji_arg:
     picked_emoji = emoji_arg
 else:
@@ -179,7 +219,8 @@ else:
 
 print(hue, fill_hex, accent_hex, foreground, picked_emoji, mode,
       editor_bg_hex, editor_fg_hex, sidebar_bg_hex, sidebar_fg_hex,
-      panel_bg_hex, section_bg_hex, section_fg_hex, sidebar_title_fg_hex)
+      panel_bg_hex, section_bg_hex, section_fg_hex, sidebar_title_fg_hex,
+      base_fg_hex)
 PYEOF
 )
 EOF
@@ -213,7 +254,7 @@ read -r -d '' SETTINGS_JSON <<JSONEOF || true
     "statusBar.foreground": "${FG_HEX}",
     "statusBarItem.remoteBackground": "${ACCENT}",
     "statusBarItem.remoteForeground": "${FG_HEX}",
-    "foreground": "${EDITOR_FG}",
+    "foreground": "${BASE_FG}",
     "editor.background": "${EDITOR_BG}",
     "editor.foreground": "${EDITOR_FG}",
     "descriptionForeground": "${EDITOR_FG}",
@@ -239,6 +280,7 @@ echo "Accent:     $ACCENT"
 echo "Foreground: $FOREGROUND ($FG_HEX)"
 echo "Editor bg:  $EDITOR_BG"
 echo "Sidebar bg: $SIDEBAR_BG"
+echo "Base fg:    $BASE_FG"
 echo "Emoji:      $PICKED_EMOJI"
 echo
 
