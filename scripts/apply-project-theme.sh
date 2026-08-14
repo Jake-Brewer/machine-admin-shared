@@ -35,6 +35,7 @@ HUE=""
 MODE=""
 EMOJI=""
 DRY_RUN=0
+FORCE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -44,6 +45,7 @@ while [[ $# -gt 0 ]]; do
     --emoji) EMOJI="$2"; shift 2 ;;
     --registry) REGISTRY="$2"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
+    --force) FORCE=1; shift ;;
     *) if [[ -z "$TARGET" ]]; then TARGET="$1"; shift; else echo "Unexpected arg: $1" >&2; exit 1; fi ;;
   esac
 done
@@ -59,7 +61,7 @@ TARGET="$(cd "$TARGET" && pwd)"
 # --- color math (python3: HSL->hex fill/accent, luma-based foreground choice,
 #     light/dark mode selection, and golden-angle next-hue picker that avoids
 #     existing registry hues) ---
-read -r PICKED_HUE FILL ACCENT FOREGROUND PICKED_EMOJI PICKED_MODE EDITOR_BG EDITOR_FG SIDEBAR_BG SIDEBAR_FG PANEL_BG SECTION_BG <<EOF
+read -r PICKED_HUE FILL ACCENT FOREGROUND PICKED_EMOJI PICKED_MODE EDITOR_BG EDITOR_FG SIDEBAR_BG SIDEBAR_FG PANEL_BG SECTION_BG SECTION_FG SIDEBAR_TITLE_FG <<EOF
 $(python3 - "$REGISTRY" "$HUE" "$EMOJI" "$LABEL" "$MODE" <<'PYEOF'
 import sys, colorsys, hashlib
 
@@ -155,6 +157,16 @@ sidebar_bg_hex = to_hex(sr, sg, sb)
 panel_bg_hex = to_hex(pr, pg, pb)
 section_bg_hex = to_hex(hr, hg, hb)
 
+# Section-header (folder-heading) foreground: same luma rule as the fill's
+# foreground, applied to the section-header's OWN background rather than
+# assumed from sidebar_fg_hex. Fixes a real bug (2026-08-14, GoogleDrive):
+# a near-white pale-pink section-header background paired with the default
+# VSCode header foreground read as near-invisible.
+sh_luma = luma_of(round(hr * 255), round(hg * 255), round(hb * 255))
+section_fg_hex = "#0E0F11" if sh_luma >= 120 else "#f5f5f5"
+sb_luma = luma_of(round(sr * 255), round(sg * 255), round(sb * 255))
+sidebar_title_fg_hex = "#0E0F11" if sb_luma >= 120 else "#f5f5f5"
+
 if emoji_arg:
     picked_emoji = emoji_arg
 else:
@@ -167,7 +179,7 @@ else:
 
 print(hue, fill_hex, accent_hex, foreground, picked_emoji, mode,
       editor_bg_hex, editor_fg_hex, sidebar_bg_hex, sidebar_fg_hex,
-      panel_bg_hex, section_bg_hex)
+      panel_bg_hex, section_bg_hex, section_fg_hex, sidebar_title_fg_hex)
 PYEOF
 )
 EOF
@@ -206,6 +218,8 @@ read -r -d '' SETTINGS_JSON <<JSONEOF || true
     "sideBar.background": "${SIDEBAR_BG}",
     "sideBar.foreground": "${SIDEBAR_FG}",
     "sideBarSectionHeader.background": "${SECTION_BG}",
+    "sideBarSectionHeader.foreground": "${SECTION_FG}",
+    "sideBarTitle.foreground": "${SIDEBAR_TITLE_FG}",
     "panel.background": "${PANEL_BG}",
     "terminal.background": "${PANEL_BG}",
     "terminal.foreground": "${SIDEBAR_FG}"
@@ -233,15 +247,32 @@ if [[ "$DRY_RUN" == "1" ]]; then
 fi
 
 if [[ -f "$SETTINGS_FILE" ]] && grep -q "workbench.colorCustomizations" "$SETTINGS_FILE" 2>/dev/null; then
-  echo "Refusing to overwrite existing theme at $SETTINGS_FILE (has workbench.colorCustomizations already)." >&2
-  echo "Delete/edit it by hand first if you really want to re-theme this project." >&2
-  exit 1
+  if [[ "$FORCE" == "1" ]] && grep -q "Auto-generated distinctive project theme" "$SETTINGS_FILE" 2>/dev/null; then
+    : # marker comment present -> this is our own prior output, safe to regenerate
+  else
+    echo "Refusing to overwrite existing theme at $SETTINGS_FILE (has workbench.colorCustomizations already)." >&2
+    if [[ "$FORCE" == "1" ]]; then
+      echo "--force given but no 'Auto-generated distinctive project theme' marker found — this looks hand-authored, not regenerating it." >&2
+    else
+      echo "Delete/edit it by hand first, or pass --force (only regenerates files carrying the auto-generated marker comment)." >&2
+    fi
+    exit 1
+  fi
 fi
 
 mkdir -p "$SETTINGS_DIR"
 echo "$SETTINGS_JSON" > "$SETTINGS_FILE"
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-  "$LABEL" "$PICKED_HUE" "$FILL" "$ACCENT" "$FOREGROUND" "$PICKED_EMOJI" "minimal" "$PICKED_MODE" >> "$REGISTRY"
+if grep -qP "^${LABEL//\//\\/}\t" "$REGISTRY" 2>/dev/null; then
+  # Regenerating an already-registered project (--force path): replace its
+  # row in place instead of appending a duplicate.
+  TMP_REGISTRY="$(mktemp)"
+  awk -F'\t' -v label="$LABEL" -v row="$LABEL	$PICKED_HUE	$FILL	$ACCENT	$FOREGROUND	$PICKED_EMOJI	minimal	$PICKED_MODE" \
+    'BEGIN{OFS="\t"} $1==label{print row; next} {print}' "$REGISTRY" > "$TMP_REGISTRY"
+  mv "$TMP_REGISTRY" "$REGISTRY"
+else
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$LABEL" "$PICKED_HUE" "$FILL" "$ACCENT" "$FOREGROUND" "$PICKED_EMOJI" "minimal" "$PICKED_MODE" >> "$REGISTRY"
+fi
 
 echo "Wrote $SETTINGS_FILE and registered in $REGISTRY."
 echo "Review, then commit in the target repo yourself."
