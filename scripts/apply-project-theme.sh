@@ -313,6 +313,18 @@ read -r -d '' SETTINGS_JSON <<JSONEOF || true
     "statusBarItem.remoteForeground": "${FG_HEX}",
     "tab.activeBorderTop": "${TAB_BORDER}",
     "foreground": "${BASE_FG}",
+    // VSCode's native menu/dropdown chrome (incl. the Claude Code "/" command
+    // menu, which reads --vscode-foreground / --vscode-disabledForeground)
+    // defaults menu.foreground to the generic "foreground" token above -- but
+    // renders it against menu.background, which we never override and which
+    // is ALWAYS VSCode's built-in dark_modern #1F1F1F regardless of project
+    // mode (no workbench.colorTheme is set anywhere). BASE_FG is tuned for
+    // two OTHER backgrounds (editor.background + the fixed dark chat bubble)
+    // and measured ~3.9:1 here -- below AA. Fixed constants, not
+    // project-derived, since menu.background is itself a fixed constant.
+    // (2026-08-14, GoogleDrive: user-reported illegible "/" menu.)
+    "menu.foreground": "#e6e6e6",
+    "disabledForeground": "#b0b0b0",
     "editor.background": "${EDITOR_BG}",
     "editor.foreground": "${EDITOR_FG}",
     "descriptionForeground": "${EDITOR_FG}",
