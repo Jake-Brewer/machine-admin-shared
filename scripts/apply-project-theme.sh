@@ -4,16 +4,22 @@
 #
 # Usage:
 #   apply-project-theme.sh <target-repo-dir> [--label "Display Name"] \
-#       [--hue N] [--emoji "🟢"] [--registry PATH] [--dry-run]
+#       [--hue N] [--mode light|dark] [--emoji "🟢"] [--registry PATH] [--dry-run]
 #
 # Without --hue, the hue is seeded deterministically from the project label
 # (sha256 hash -> 0-360) so the same project name always lands on roughly the
 # same color even across separate runs/registry states — not order-dependent
 # on how many other projects were themed first. If that seed hue collides
 # (within 18°) with something already in the registry, it's nudged forward in
-# small fixed steps until clear. See ../docs/vscode-theming.md (haribo-admin)
-# for the design rationale (contrast math, foreground-choice rule, template
-# tiers).
+# small fixed steps until clear.
+#
+# Without --mode, light-vs-dark base is ALSO seeded from the label hash —
+# projects aren't all forced onto the same dark chrome. Maximize the visible
+# difference between projects (hue AND light/dark inversion), not just hue,
+# while keeping foreground/background contrast correct on both the title/
+# activity/status bar fill and the editor/sidebar surface. See
+# ../docs/vscode-theming.md (haribo-admin) for the full design rationale
+# (contrast math, foreground-choice rule, template tiers).
 #
 # This only WRITES <target-repo-dir>/.vscode/settings.json and appends a row
 # to the registry — it does not git add/commit/push. Review and commit in the
@@ -26,6 +32,7 @@ REGISTRY="$SCRIPT_DIR/../theme-registry.tsv"
 TARGET=""
 LABEL=""
 HUE=""
+MODE=""
 EMOJI=""
 DRY_RUN=0
 
@@ -33,6 +40,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --label) LABEL="$2"; shift 2 ;;
     --hue) HUE="$2"; shift 2 ;;
+    --mode) MODE="$2"; shift 2 ;;
     --emoji) EMOJI="$2"; shift 2 ;;
     --registry) REGISTRY="$2"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
@@ -46,15 +54,16 @@ if [[ -z "$TARGET" ]]; then
 fi
 TARGET="$(cd "$TARGET" && pwd)"
 [[ -z "$LABEL" ]] && LABEL="$(basename "$TARGET")"
-[[ -f "$REGISTRY" ]] || { echo "project	hue	fill	accent	foreground	emoji	tier" > "$REGISTRY"; }
+[[ -f "$REGISTRY" ]] || { echo "project	hue	fill	accent	foreground	emoji	tier	mode" > "$REGISTRY"; }
 
 # --- color math (python3: HSL->hex fill/accent, luma-based foreground choice,
-#     and golden-angle next-hue picker that avoids existing registry hues) ---
-read -r PICKED_HUE FILL ACCENT FOREGROUND PICKED_EMOJI <<EOF
-$(python3 - "$REGISTRY" "$HUE" "$EMOJI" "$LABEL" <<'PYEOF'
+#     light/dark mode selection, and golden-angle next-hue picker that avoids
+#     existing registry hues) ---
+read -r PICKED_HUE FILL ACCENT FOREGROUND PICKED_EMOJI PICKED_MODE EDITOR_BG EDITOR_FG SIDEBAR_BG SIDEBAR_FG PANEL_BG SECTION_BG <<EOF
+$(python3 - "$REGISTRY" "$HUE" "$EMOJI" "$LABEL" "$MODE" <<'PYEOF'
 import sys, colorsys, hashlib
 
-registry_path, hue_arg, emoji_arg, label = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+registry_path, hue_arg, emoji_arg, label, mode_arg = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
 
 used_hues = []
 with open(registry_path) as f:
@@ -90,6 +99,17 @@ else:
         hue = (hue + step) % 360
         tries += 1
 
+# Mode (light vs dark base): a SECOND, independent axis so projects don't
+# all end up on the same near-black chrome — maximizes visible difference
+# between windows at a glance, not just hue. Seeded from a different slice
+# of the same label hash (not the hue bytes) so hue and mode vary
+# independently; --mode overrides for a manual pick.
+if mode_arg in ("light", "dark"):
+    mode = mode_arg
+else:
+    digest = hashlib.sha256(label.encode("utf-8")).digest()
+    mode = "light" if digest[4] % 2 == 0 else "dark"
+
 # Fill: muted, dark-ish brand color (matches the S~65-90%/L~25-40% cluster
 # observed across existing themes). Accent: bright, reserved for borders/
 # text highlights only, never a large fill.
@@ -106,9 +126,34 @@ accent_hex = to_hex(accent_r, accent_g, accent_b)
 # ~120/255 — validated against every theme already in use (see
 # docs/vscode-theming.md for the worked examples: red/blue/green/purple fills
 # all luma <120 -> light text; the one amber fill at luma 128 -> dark text).
+def luma_of(r255, g255, b255):
+    return 0.299 * r255 + 0.587 * g255 + 0.114 * b255
+
 fr, fg, fb = round(fill_r * 255), round(fill_g * 255), round(fill_b * 255)
-luma = 0.299 * fr + 0.587 * fg + 0.114 * fb
-foreground = "dark" if luma >= 120 else "light"
+foreground = "dark" if luma_of(fr, fg, fb) >= 120 else "light"
+
+# Editor/sidebar surface colors, derived per mode. Dark mode reuses the
+# existing near-black base (as in haribo-admin/zuzzax) tinted faintly toward
+# the hue; light mode mirrors work/teters' pattern (warm-ish off-white base,
+# pale hue-tinted sidebar, dark neutral text). Contrast is re-verified via
+# the same luma rule rather than assumed correct for either mode.
+if mode == "dark":
+    er, eg, eb = colorsys.hls_to_rgb(hue / 360, 0.05, 0.15)
+    sr, sg, sb = colorsys.hls_to_rgb(hue / 360, 0.09, 0.15)
+    pr, pg, pb = colorsys.hls_to_rgb(hue / 360, 0.07, 0.15)
+    hr, hg, hb = colorsys.hls_to_rgb(hue / 360, 0.11, 0.15)
+    editor_fg_hex, sidebar_fg_hex = "#f0f0f0", "#f0f0f0"
+else:
+    er, eg, eb = colorsys.hls_to_rgb(hue / 360, 0.985, 0.35)
+    sr, sg, sb = colorsys.hls_to_rgb(hue / 360, 0.94, 0.35)
+    pr, pg, pb = colorsys.hls_to_rgb(hue / 360, 0.90, 0.35)
+    hr, hg, hb = colorsys.hls_to_rgb(hue / 360, 0.87, 0.35)
+    editor_fg_hex, sidebar_fg_hex = "#1a1a1a", "#1a1a1a"
+
+editor_bg_hex = to_hex(er, eg, eb)
+sidebar_bg_hex = to_hex(sr, sg, sb)
+panel_bg_hex = to_hex(pr, pg, pb)
+section_bg_hex = to_hex(hr, hg, hb)
 
 if emoji_arg:
     picked_emoji = emoji_arg
@@ -120,7 +165,9 @@ else:
     ]
     picked_emoji = next(e for limit, e in buckets if hue < limit)
 
-print(hue, fill_hex, accent_hex, foreground, picked_emoji)
+print(hue, fill_hex, accent_hex, foreground, picked_emoji, mode,
+      editor_bg_hex, editor_fg_hex, sidebar_bg_hex, sidebar_fg_hex,
+      panel_bg_hex, section_bg_hex)
 PYEOF
 )
 EOF
@@ -138,7 +185,12 @@ read -r -d '' SETTINGS_JSON <<JSONEOF || true
 {
   "workbench.colorCustomizations": {
     // Auto-generated distinctive project theme (minimal tier) — see
-    // shared/docs/vscode-theming.md for the design rationale. hue=${PICKED_HUE}
+    // shared/docs/vscode-theming.md for the design rationale.
+    // hue=${PICKED_HUE} mode=${PICKED_MODE}
+    // Diff add/remove colors are intentionally NOT set here — they stay on
+    // VSCode's default semantic green/red so they read the same across
+    // every themed project regardless of brand hue. Don't add
+    // diffEditor.*Background overrides to this template.
     "titleBar.activeBackground": "${FILL}",
     "titleBar.activeForeground": "${FG_HEX}",
     "titleBar.inactiveBackground": "${FILL}",
@@ -148,7 +200,15 @@ read -r -d '' SETTINGS_JSON <<JSONEOF || true
     "statusBar.background": "${FILL}",
     "statusBar.foreground": "${FG_HEX}",
     "statusBarItem.remoteBackground": "${ACCENT}",
-    "statusBarItem.remoteForeground": "${FG_HEX}"
+    "statusBarItem.remoteForeground": "${FG_HEX}",
+    "editor.background": "${EDITOR_BG}",
+    "editor.foreground": "${EDITOR_FG}",
+    "sideBar.background": "${SIDEBAR_BG}",
+    "sideBar.foreground": "${SIDEBAR_FG}",
+    "sideBarSectionHeader.background": "${SECTION_BG}",
+    "panel.background": "${PANEL_BG}",
+    "terminal.background": "${PANEL_BG}",
+    "terminal.foreground": "${SIDEBAR_FG}"
   },
   "window.title": "${PICKED_EMOJI} ${LABEL} \${separator} \${activeEditorShort}"
 }
@@ -157,9 +217,12 @@ JSONEOF
 echo "Target:     $TARGET"
 echo "Label:      $LABEL"
 echo "Hue:        $PICKED_HUE"
+echo "Mode:       $PICKED_MODE"
 echo "Fill:       $FILL"
 echo "Accent:     $ACCENT"
 echo "Foreground: $FOREGROUND ($FG_HEX)"
+echo "Editor bg:  $EDITOR_BG"
+echo "Sidebar bg: $SIDEBAR_BG"
 echo "Emoji:      $PICKED_EMOJI"
 echo
 
@@ -177,8 +240,8 @@ fi
 
 mkdir -p "$SETTINGS_DIR"
 echo "$SETTINGS_JSON" > "$SETTINGS_FILE"
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-  "$LABEL" "$PICKED_HUE" "$FILL" "$ACCENT" "$FOREGROUND" "$PICKED_EMOJI" "minimal" >> "$REGISTRY"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  "$LABEL" "$PICKED_HUE" "$FILL" "$ACCENT" "$FOREGROUND" "$PICKED_EMOJI" "minimal" "$PICKED_MODE" >> "$REGISTRY"
 
 echo "Wrote $SETTINGS_FILE and registered in $REGISTRY."
 echo "Review, then commit in the target repo yourself."
