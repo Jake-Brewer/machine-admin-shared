@@ -208,16 +208,39 @@ FIXED_DARK_BUBBLE_RGB = (25, 26, 27)  # measured, extension-hardcoded, not theme
 # surfaces has higher luminance, so contrast against BOTH ends up >= this.
 FIXED_MENU_BG_RGB = (0x1F, 0x1F, 0x1F)
 
-if mode == "dark":
-    # Editor surface is already near-black here, same ballpark as the fixed
-    # dark bubble — no conflict, the existing light foreground works for both.
-    base_fg_hex = editor_fg_hex
-else:
-    l_light = rel_luminance(round(er * 255), round(eg * 255), round(eb * 255))
-    l_dark = max(rel_luminance(*FIXED_DARK_BUBBLE_RGB), rel_luminance(*FIXED_MENU_BG_RGB))
+# Every fixed (non-project-derived) DARK surface this generic gray is known
+# to render against, beyond our own editor.background. Extend this list --
+# not the formula -- when a new colliding surface turns up (e.g. a future
+# extension version adds another hardcoded background).
+FIXED_DARK_SURFACES = [FIXED_DARK_BUBBLE_RGB, FIXED_MENU_BG_RGB]
+
+def maximin_gray(light_rgb, dark_rgbs):
+    """Flat gray whose contrast ratio against the light bg equals its
+    contrast ratio against the BINDING dark bg -- the best a single flat
+    color can do across all of them at once (see docs/vscode-theming.md).
+    The binding dark surface is whichever has the HIGHEST luminance (i.e.
+    is closest in tone to the candidate gray, since for backgrounds darker
+    than the candidate, contrast ratio DECREASES as the background's own
+    luminance increases) -- NOT simply the globally darkest one. Taking a
+    naive global min/max across light+dark backgrounds together silently
+    picks the wrong (easier, higher-contrast) dark surface whenever there's
+    more than one dark bg to satisfy -- caught 2026-08-14 by re-verifying
+    against the known-correct GoogleDrive base_fg (#7d7d7d) after an
+    over-eager generalization of this function regressed it back to #7b7b7b.
+    """
+    l_light = rel_luminance(*light_rgb)
+    l_dark = max(rel_luminance(*rgb) for rgb in dark_rgbs)
     l_mid = ((l_light + 0.05) * (l_dark + 0.05)) ** 0.5 - 0.05
     mid255 = linear_to_srgb255(l_mid)
-    base_fg_hex = "#{:02x}{:02x}{:02x}".format(mid255, mid255, mid255)
+    return "#{:02x}{:02x}{:02x}".format(mid255, mid255, mid255)
+
+if mode == "dark":
+    # Editor surface is already near-black here, same ballpark as the fixed
+    # dark surfaces — no conflict, the existing light foreground works for all.
+    base_fg_hex = editor_fg_hex
+else:
+    editor_bg_rgb = (round(er * 255), round(eg * 255), round(eb * 255))
+    base_fg_hex = maximin_gray(editor_bg_rgb, FIXED_DARK_SURFACES)
 
 # Border accent floor (2026-08-14, user request): borders were just the flat
 # ACCENT color with no contrast check against whatever background they sit
