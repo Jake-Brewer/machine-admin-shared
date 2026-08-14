@@ -213,6 +213,7 @@ read -r -d '' SETTINGS_JSON <<JSONEOF || true
     "statusBar.foreground": "${FG_HEX}",
     "statusBarItem.remoteBackground": "${ACCENT}",
     "statusBarItem.remoteForeground": "${FG_HEX}",
+    "foreground": "${EDITOR_FG}",
     "editor.background": "${EDITOR_BG}",
     "editor.foreground": "${EDITOR_FG}",
     "descriptionForeground": "${EDITOR_FG}",
