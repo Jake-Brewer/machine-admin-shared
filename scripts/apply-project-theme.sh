@@ -210,12 +210,20 @@ else:
 if emoji_arg:
     picked_emoji = emoji_arg
 else:
-    # coarse hue->emoji mapping, purely cosmetic (window.title prefix)
-    buckets = [
-        (15, "🔴"), (45, "🟠"), (70, "🟡"), (170, "🟢"),
-        (200, "🩵"), (250, "🔵"), (290, "🟣"), (330, "🩷"), (360, "🔴"),
+    # Independent axis (2026-08-14, distinctiveness pass): previously bucketed
+    # from hue, which meant emoji added zero real combinations (it was fully
+    # determined by hue -> collided in lockstep with every hue collision).
+    # Seeded from a separate hash byte so a hue collision doesn't ALSO produce
+    # an emoji collision -- window.title icon + color together, not just
+    # color. 24 emoji x 20 guaranteed hue slots x 2 modes = 960 combinations
+    # vs. the old 20 x 2 = 40 (see docs/vscode-theming.md for the derivation).
+    emoji_pool = [
+        "🔴", "🟠", "🟡", "🟢", "🩵", "🔵", "🟣", "🩷",
+        "⭐", "🌙", "☀️", "⚡", "🔥", "❄️", "🌊", "🍀",
+        "🎯", "🚀", "🔶", "🔷", "🟩", "🟪", "🎲", "🧭",
     ]
-    picked_emoji = next(e for limit, e in buckets if hue < limit)
+    digest = hashlib.sha256(label.encode("utf-8")).digest()
+    picked_emoji = emoji_pool[digest[5] % len(emoji_pool)]
 
 print(hue, fill_hex, accent_hex, foreground, picked_emoji, mode,
       editor_bg_hex, editor_fg_hex, sidebar_bg_hex, sidebar_fg_hex,
@@ -252,8 +260,10 @@ read -r -d '' SETTINGS_JSON <<JSONEOF || true
     "activityBar.activeBorder": "${ACCENT}",
     "statusBar.background": "${FILL}",
     "statusBar.foreground": "${FG_HEX}",
+    "statusBar.border": "${ACCENT}",
     "statusBarItem.remoteBackground": "${ACCENT}",
     "statusBarItem.remoteForeground": "${FG_HEX}",
+    "tab.activeBorderTop": "${ACCENT}",
     "foreground": "${BASE_FG}",
     "editor.background": "${EDITOR_BG}",
     "editor.foreground": "${EDITOR_FG}",
