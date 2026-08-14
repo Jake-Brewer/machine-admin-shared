@@ -18,3 +18,11 @@ scripts/restart-vscode-resume.sh <project-dir> [resume-message]
 
 Must be launched detached from outside the VSCode process tree — see the
 script header for details and known timing/coordinate caveats.
+
+## docs/gui-automation-notes.md
+
+Broader `xdotool`/VSCode GUI-automation gotchas beyond the restart/resume
+script — notably how to open a second, independent VSCode window and drive
+a fresh Claude Code session in it (wrong-sidebar-panel risk, stale window
+geometry, screenshot-relative vs. screen-absolute coordinates, eval-quoting
+failures on long prompts).
