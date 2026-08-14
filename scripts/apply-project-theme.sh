@@ -61,7 +61,7 @@ TARGET="$(cd "$TARGET" && pwd)"
 # --- color math (python3: HSL->hex fill/accent, luma-based foreground choice,
 #     light/dark mode selection, and golden-angle next-hue picker that avoids
 #     existing registry hues) ---
-read -r PICKED_HUE FILL ACCENT FOREGROUND PICKED_EMOJI PICKED_MODE EDITOR_BG EDITOR_FG SIDEBAR_BG SIDEBAR_FG PANEL_BG SECTION_BG SECTION_FG SIDEBAR_TITLE_FG BASE_FG <<EOF
+read -r PICKED_HUE FILL ACCENT FOREGROUND PICKED_EMOJI PICKED_MODE EDITOR_BG EDITOR_FG SIDEBAR_BG SIDEBAR_FG PANEL_BG SECTION_BG SECTION_FG SIDEBAR_TITLE_FG BASE_FG STATUS_BORDER TAB_BORDER <<EOF
 $(python3 - "$REGISTRY" "$HUE" "$EMOJI" "$LABEL" "$MODE" <<'PYEOF'
 import sys, colorsys, hashlib
 
@@ -207,6 +207,54 @@ else:
     mid255 = linear_to_srgb255(l_mid)
     base_fg_hex = "#{:02x}{:02x}{:02x}".format(mid255, mid255, mid255)
 
+# Border accent floor (2026-08-14, user request): borders were just the flat
+# ACCENT color with no contrast check against whatever background they sit
+# on -- fine at some hues, washed out at others. Require each border to hit
+# at least HALF the contrast ratio of that region's own text/background
+# pair, by nudging the accent's LIGHTNESS (never hue/saturation, so it still
+# reads as "the accent color") toward whichever direction increases contrast
+# against that specific background, via search.
+def contrast_ratio(rgb1, rgb2):
+    l1, l2 = rel_luminance(*rgb1), rel_luminance(*rgb2)
+    lighter, darker = max(l1, l2), min(l1, l2)
+    return (lighter + 0.05) / (darker + 0.05)
+
+def border_for(bg_rgb255, target_ratio, accent_hue, accent_s=0.95, base_l=0.58, steps=40):
+    best = None
+    for direction in (1, -1):
+        bound = 1.0 if direction > 0 else 0.0
+        for i in range(steps + 1):
+            l = base_l + direction * (i / steps) * abs(bound - base_l)
+            l = max(0.0, min(1.0, l))
+            r, g, b = colorsys.hls_to_rgb(accent_hue / 360, l, accent_s)
+            rgb255 = (round(r * 255), round(g * 255), round(b * 255))
+            ratio = contrast_ratio(rgb255, bg_rgb255)
+            if ratio >= target_ratio:
+                dist = abs(l - base_l)
+                if best is None or dist < best[0]:
+                    best = (dist, rgb255)
+                break
+    if best is None:
+        # Target unreachable even at the lightness extremes (very close bg
+        # luminances) -- fall back to whichever extreme has higher contrast.
+        r0, g0, b0 = colorsys.hls_to_rgb(accent_hue / 360, 0.0, accent_s)
+        r1, g1, b1 = colorsys.hls_to_rgb(accent_hue / 360, 1.0, accent_s)
+        rgb0 = (round(r0 * 255), round(g0 * 255), round(b0 * 255))
+        rgb1 = (round(r1 * 255), round(g1 * 255), round(b1 * 255))
+        c0, c1 = contrast_ratio(rgb0, bg_rgb255), contrast_ratio(rgb1, bg_rgb255)
+        best = (0, rgb0) if c0 >= c1 else (0, rgb1)
+    return "#{:02x}{:02x}{:02x}".format(*best[1])
+
+fg_hex_rgb = (14, 15, 17) if foreground == "dark" else (245, 245, 245)
+fill_rgb255 = (fr, fg, fb)
+status_target = contrast_ratio(fg_hex_rgb, fill_rgb255) / 2
+status_border_hex = border_for(fill_rgb255, status_target, (hue + 6) % 360)
+
+editor_fg_rgb = (240, 240, 240) if mode == "dark" else (26, 26, 26)
+editor_bg_rgb255 = (round(er * 255), round(eg * 255), round(eb * 255))
+editor_target = contrast_ratio(editor_fg_rgb, editor_bg_rgb255) / 2
+tab_border_hex = border_for(editor_bg_rgb255, editor_target, (hue + 6) % 360)
+
 if emoji_arg:
     picked_emoji = emoji_arg
 else:
@@ -228,7 +276,7 @@ else:
 print(hue, fill_hex, accent_hex, foreground, picked_emoji, mode,
       editor_bg_hex, editor_fg_hex, sidebar_bg_hex, sidebar_fg_hex,
       panel_bg_hex, section_bg_hex, section_fg_hex, sidebar_title_fg_hex,
-      base_fg_hex)
+      base_fg_hex, status_border_hex, tab_border_hex)
 PYEOF
 )
 EOF
@@ -257,13 +305,13 @@ read -r -d '' SETTINGS_JSON <<JSONEOF || true
     "titleBar.inactiveBackground": "${FILL}",
     "activityBar.background": "${FILL}",
     "activityBar.foreground": "${FG_HEX}",
-    "activityBar.activeBorder": "${ACCENT}",
+    "activityBar.activeBorder": "${STATUS_BORDER}",
     "statusBar.background": "${FILL}",
     "statusBar.foreground": "${FG_HEX}",
-    "statusBar.border": "${ACCENT}",
+    "statusBar.border": "${STATUS_BORDER}",
     "statusBarItem.remoteBackground": "${ACCENT}",
     "statusBarItem.remoteForeground": "${FG_HEX}",
-    "tab.activeBorderTop": "${ACCENT}",
+    "tab.activeBorderTop": "${TAB_BORDER}",
     "foreground": "${BASE_FG}",
     "editor.background": "${EDITOR_BG}",
     "editor.foreground": "${EDITOR_FG}",
@@ -291,6 +339,8 @@ echo "Foreground: $FOREGROUND ($FG_HEX)"
 echo "Editor bg:  $EDITOR_BG"
 echo "Sidebar bg: $SIDEBAR_BG"
 echo "Base fg:    $BASE_FG"
+echo "Status brd: $STATUS_BORDER"
+echo "Tab brd:    $TAB_BORDER"
 echo "Emoji:      $PICKED_EMOJI"
 echo
 
