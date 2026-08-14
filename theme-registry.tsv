@@ -2,13 +2,13 @@ project	hue	fill	accent	foreground	emoji	tier	mode
 haribo-admin	4.0	#a5281f	#ffd100	light	🔴	full	dark
 zuzzax	38.1	#b87a0e	#ffaa17	dark	🟠	full	dark
 work/teters	207.1	#0a6fc2	#ffd34d	light	🔵	full-light	light
-office-hero/main	154.5	#1b4332	#40916c	light	🟢	minimal	dark
+office-hero/main	288	#6a1b7e	#e52efa	light	🩵	minimal	dark
 office-hero/stream__ai	273.5	#3b0764	#a855f7	light	🟣	minimal	dark
-office-hero/phase-6	15.3	#7c2d12	#ea580c	light	🟠	minimal	dark
-office-hero/stream__backend-core	214.2	#1e3a5f	#3b82f6	light	🔵	minimal	dark
+office-hero/phase-6	244	#211b7e	#502efa	light	🧭	minimal	light
+office-hero/stream__backend-core	301	#7e1b7d	#fa2ee2	light	🟣	minimal	dark
 office-hero/stream__backoffice	175.9	#134e4a	#2dd4bf	light	🩵	minimal	dark
 office-hero/stream__frontend	21.7	#78350f	#f59e0b	light	🟡	minimal	dark
-office-hero/stream__mobile	334.0	#6d1a3e	#ec4899	light	🩷	minimal	dark
+office-hero/stream__mobile	92	#497e1b	#79fa2e	light	🌊	minimal	light
 apps/context-forge	264	#431b7e	#942efa	light	🎯	minimal	light
 apps/context-visualizer	107	#307e1b	#46fa2e	light	🩷	minimal	dark
 apps/email_assistant	259	#3a1b7e	#832efa	light	🟡	minimal	light
