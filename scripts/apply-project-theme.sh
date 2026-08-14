@@ -215,6 +215,7 @@ read -r -d '' SETTINGS_JSON <<JSONEOF || true
     "statusBarItem.remoteForeground": "${FG_HEX}",
     "editor.background": "${EDITOR_BG}",
     "editor.foreground": "${EDITOR_FG}",
+    "descriptionForeground": "${EDITOR_FG}",
     "sideBar.background": "${SIDEBAR_BG}",
     "sideBar.foreground": "${SIDEBAR_FG}",
     "sideBarSectionHeader.background": "${SECTION_BG}",
