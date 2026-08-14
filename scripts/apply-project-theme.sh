@@ -325,21 +325,27 @@ read -r -d '' SETTINGS_JSON <<JSONEOF || true
     "statusBarItem.remoteForeground": "${FG_HEX}",
     "tab.activeBorderTop": "${TAB_BORDER}",
     "foreground": "${BASE_FG}",
-    // VSCode's native menu/dropdown chrome (incl. the Claude Code "/" command
-    // menu, which reads --vscode-foreground / --vscode-disabledForeground)
-    // defaults menu.foreground to the generic "foreground" token above -- but
-    // renders it against menu.background, which we never override and which
-    // is ALWAYS VSCode's built-in dark_modern #1F1F1F regardless of project
-    // mode (no workbench.colorTheme is set anywhere). BASE_FG is tuned for
-    // two OTHER backgrounds (editor.background + the fixed dark chat bubble)
-    // and measured ~3.9:1 here -- below AA. Fixed constants, not
-    // project-derived, since menu.background is itself a fixed constant.
-    // (2026-08-14, GoogleDrive: user-reported illegible "/" menu.)
+    // Fixed constants (not project-derived) for VSCode's NATIVE menu chrome
+    // (Electron context menus / dropdowns), which renders against
+    // menu.background -- always the built-in dark_modern #1F1F1F, since no
+    // workbench.colorTheme is set anywhere. NOTE: the Claude Code "/" command
+    // popup does NOT read these -- its CSS uses --app-primary-foreground /
+    // --app-secondary-foreground (-> foreground / descriptionForeground
+    // below), confirmed by reading the extension's own minified CSS
+    // (2026-08-14). Left in place for the native-menu case these DO cover.
     "menu.foreground": "#e6e6e6",
     "disabledForeground": "#b0b0b0",
     "editor.background": "${EDITOR_BG}",
     "editor.foreground": "${EDITOR_FG}",
-    "descriptionForeground": "${EDITOR_FG}",
+    // NOT ${EDITOR_FG}: descriptionForeground is ALSO read by the Claude Code
+    // popup's secondary/model-indicator text (--app-secondary-foreground),
+    // rendered against the fixed dark menu/bubble surfaces, not against
+    // editor.background. EDITOR_FG is near-black for light-mode projects --
+    // on the near-black menu bg that's ~1:1 contrast, i.e. invisible (2026-
+    // 08-14, GoogleDrive: user-reported unreadable model name in "/" menu,
+    // next to "Switch model..."). BASE_FG is already the cross-surface-safe
+    // maximin gray computed above -- reuse it here instead of re-deriving.
+    "descriptionForeground": "${BASE_FG}",
     "sideBar.background": "${SIDEBAR_BG}",
     "sideBar.foreground": "${SIDEBAR_FG}",
     "sideBarSectionHeader.background": "${SECTION_BG}",
