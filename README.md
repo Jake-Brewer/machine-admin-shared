@@ -21,11 +21,12 @@ script header for details and known timing/coordinate caveats.
 
 ## scripts/ac-idle-daemon.py
 
-Keeps the screen from blanking while the laptop is on AC power, and restores
+Keeps the screen from blanking or dimming while the laptop is on AC power, and restores
 idle blanking when it goes back on battery. GNOME has a single `idle-delay`
 for both power states, so this watches UPower's `OnBattery` property and
 switches the value on the transition: `0` (never blank) on AC, the remembered
-battery delay on battery. The battery delay is learned from whatever is set
+battery delay on battery. GNOME's `idle-dim` is switched the same way (off on
+AC, restored on battery). The battery delay is learned from whatever is set
 when the machine goes onto battery, and nothing is applied while the power
 state is unchanged, so a manual change is never fought.
 
